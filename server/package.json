@@ -1,0 +1,20 @@
+﻿{
+  "name": "voxel-fighter-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "start": "tsx --env-file=.env src/server.ts",
+    "test": "node --experimental-strip-types test/all.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "ethers": "^6.11.0",
+    "socket.io": "^4.7.5",
+    "tsx": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
