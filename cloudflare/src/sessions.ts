@@ -74,8 +74,12 @@ export class SessionCodec {
  * the callback can recover the PKCE verifier without server-side storage.
  * ------------------------------------------------------------------ */
 
-const sealKey = async (secret: string) =>
-  crypto.subtle.importKey('raw', te.encode(secret), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+const sealKey = async (secret: string) => {
+  // SESSION_KEY may be any length (it's also the HMAC key); AES needs exactly 128/192/256 bits,
+  // so derive a fixed 256-bit key from it.
+  const bits = await crypto.subtle.digest('SHA-256', te.encode(secret));
+  return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+};
 
 export async function sealState(env: Env, value: { nonce: string; verifier: string; iat: number }): Promise<string> {
   const key = await sealKey(env.SESSION_KEY || 'vf-dev-secret');

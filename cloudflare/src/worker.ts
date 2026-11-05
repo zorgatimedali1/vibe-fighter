@@ -83,8 +83,10 @@ export default {
     /* --------------------------------- X login -------------------------------- */
     if (path === '/auth/x/start') {
       const as = url.searchParams.get('as') ?? undefined;
-      // No credentials (or dev mode): mint a stable mock identity so the ladder is playable.
-      if (isDev(env) || !xConfigured(env)) {
+      // No credentials: mint a stable mock identity so the ladder is playable (mirrors server.ts,
+      // where mock mode keys off the presence of X_CLIENT_ID, not on DEV_MODE — free practice and
+      // real X sign-in are independent switches).
+      if (!xConfigured(env)) {
         return mockLogin(env, as);
       }
       const cfg = { clientId: env.X_CLIENT_ID!, clientSecret: env.X_CLIENT_SECRET ?? '', redirectUri: env.X_REDIRECT_URI ?? `${url.origin}/auth/x/callback` };
