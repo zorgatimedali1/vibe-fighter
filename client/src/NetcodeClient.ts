@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { io, type Socket } from 'socket.io-client';
 import { Action } from './InputManager';
 import { FIGHT, type BotDifficulty, type MoveName } from './moves';
+import { WSSocket, type GameSocket } from './transport';
 
 /* ---------- Wire protocol (matches server/src/server.ts + CombatRoom.ts) ----------
  * s->c 'auth_challenge' {message,dev}   c->s 'auth' {address,signature?,matchId,fighter,bot}
@@ -126,7 +126,9 @@ export function stepMovement(x: number, actions: number, facing: 1 | -1, dt = 1 
 }
 
 export class NetcodeClient {
-  readonly socket: Socket;
+  socket: GameSocket = null!;
+  /** True on the Cloudflare build (native WebSocket); false in dev (socket.io). */
+  wsMode = false;
   playerId = '';
   phase = 'WAITING';
   /** Predicted local position (x). y comes from the server (jumps are not predicted). */
@@ -142,19 +144,27 @@ export class NetcodeClient {
   /** Round-trip time measured from the server's 2 s probe (ms). */
   pingMs = 0;
 
-  private constructor(private o: ConnectOptions, private h: NetHandlers, private onShake: (a: number, d: number) => void) {
-    this.socket = io(o.url, { transports: ['websocket'] });
-  }
+  private constructor(private o: ConnectOptions, private h: NetHandlers, private onShake: (a: number, d: number) => void) {}
 
   /** Connects, authenticates (wallet signature or dev guest) and resolves with the bound player id. */
-  static connect(o: ConnectOptions, h: NetHandlers, onShake: (a: number, d: number) => void): Promise<NetcodeClient> {
+  static async connect(o: ConnectOptions, h: NetHandlers, onShake: (a: number, d: number) => void): Promise<NetcodeClient> {
     const n = new NetcodeClient(o, h, onShake);
+    if (import.meta.env.DEV) {
+      // Node dev server: real socket.io
+      const { io } = await import('socket.io-client');
+      n.socket = io(o.url, { transports: ['websocket'] });
+    } else {
+      // Cloudflare build: native WebSocket against the Queue/Room Durable Objects.
+      n.wsMode = true;
+      n.socket = new WSSocket(o.url, { matchId: o.matchId, queue: !!o.queue });
+      n.socket.onRerouteRequested = (matchId) => n.reroute(matchId);
+    }
     return new Promise((resolve, reject) => {
       const s = n.socket;
       s.on('connect_error', () => reject(new Error('Cannot reach the game server.')));
-      s.on('auth_challenge', async ({ message }: { message: string }) => {
+      s.on('auth_challenge', async (p: { message: string }) => {
         try {
-          const id = o.wallet ? await o.wallet(message) : { address: guestId(), signature: undefined };
+          const id = o.wallet ? await o.wallet(p.message) : { address: guestId(), signature: undefined };
           s.emit('auth', {
             ...id, matchId: o.matchId, fighter: o.fighter, bot: o.bot,
             difficulty: o.difficulty, training: o.training, session: o.session, queue: o.queue,
@@ -170,6 +180,13 @@ export class NetcodeClient {
       s.on('auth_error', (p: { reason: string }) => reject(new Error(p.reason)));
       n.bind();
     });
+  }
+
+  /** Ranked reroute (native WS path): leave the QueueDO socket and join the matched RoomDO. */
+  private reroute(matchId: string) {
+    this.o.matchId = matchId;
+    this.o.queue = false;
+    (this.socket as WSSocket).reroute({ matchId });
   }
 
   private bind() {
@@ -235,7 +252,7 @@ export class NetcodeClient {
     this.localPos.x = stepMovement(this.localPos.x, predicted, this.facing);
     this.pending.push({ ...pkt, actions: predicted });
     if (this.pending.length > 120) this.pending.shift();
-    this.socket.volatile.emit('input', pkt);
+    this.socket.emit('input', pkt);
     return pkt;
   }
 

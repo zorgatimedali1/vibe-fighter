@@ -4,3 +4,6 @@ server/.env
 
 # ladder database + session key
 server/data/
+
+# wrangler local dev state
+cloudflare/.wrangler/

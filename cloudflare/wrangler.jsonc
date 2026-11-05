@@ -1,0 +1,31 @@
+// Vibe Fighter on Cloudflare: one Worker = static client + ladder API + X login,
+// one Room Durable Object per match (authoritative 60 Hz sim), one Queue DO for ranked.
+// Reuses the engine verbatim from ../server/src/engine (CombatRoom / moves / Bot).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vibe-fighter",
+  "compatibility_date": "2026-11-01",
+  "main": "src/worker.ts",
+  "assets": {
+    "directory": "../client/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/*", "/auth/*", "/ws", "/health"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "vibe-fighter", "database_id": "3207311b-dabf-4ea2-a8cc-d735c0c2d4db" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOM", "class_name": "RoomDO" },
+      { "name": "QUEUE", "class_name": "QueueDO" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO", "QueueDO"] }],
+  "observability": { "enabled": true },
+  "vars": {
+    // Free practice mode: guests, bots, no chain. Flip to "false" for staked matches (needs RPC config).
+    "DEV_MODE": "true"
+  }
+}
